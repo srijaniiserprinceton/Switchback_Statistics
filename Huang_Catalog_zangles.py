@@ -1,11 +1,13 @@
 import re
+import sys
 import pandas
 from tqdm import tqdm
 import pyspedas
 import pytplot
 import astropy.units as u
 from astropy.time import Time, TimeDelta
-from sunpy.coordinates import HeliocentricInertial
+# from sunpy.coordinates import HeliocentricInertial
+from sunpy.coordinates import HeliographicCarrington
 from astropy import coordinates as coor
 import astrospice
 import numpy as np
@@ -18,7 +20,8 @@ import PSP_orbit
 
 Rsun_km = u.Rsun.to('km')
 
-new_frame = HeliocentricInertial()
+# new_frame = HeliocentricInertial()
+new_frame = HeliographicCarrington(observer='self')
 
 def to_datetime64(t):
     date, time = re.split('[/]', t)
@@ -155,9 +158,22 @@ def make_BRTN_plots(ax, time_event, BRTN, T1, T2, T3, T4, T5, T6):
     ax.axvspan(T4, T5, alpha=0.2, color='orange')
     ax.axvspan(T5, T6, alpha=0.2, color='green')
 
+def spherical_distance(coor1, coor2):
+    # unpacking the coordinates
+    r1, theta1, phi1 = coor1.radius.to(u.km), coor1.lat.to(u.rad), coor1.lon.to(u.rad)
+    r2, theta2, phi2 = coor2.radius.to(u.km), coor2.lat.to(u.rad), coor2.lon.to(u.rad)
+
+    # calculating spherical distance
+    dist_sq = r1**2 + r2**2 - 2*r1*r2*(np.sin(theta1)*np.sin(theta2)*np.cos(phi1-phi2)\
+                            + np.cos(theta1)*np.cos(theta2))
+    dist = np.sqrt(dist_sq)
+
+    # returns distances in Rsun
+    return dist.to(u.Rsun)
+
 if __name__=='__main__':
     # selecting encounter to analyze. E1,2,4-8 are available
-    enc = 'E08'
+    enc = 'E02'
     #-------selecting the time window-----#
     data = pandas.read_csv(f"./data_products/Huang2023Catalog/{enc}_PSP_switchback_event_list.csv") 
     # events = data.groupby(["event number","encounter"])  # 1,074 events
@@ -170,10 +186,17 @@ if __name__=='__main__':
     enc_orb_times, enc_orb_coords = PSP_orbit.get_PSP_orbit_coords(tstart_enc, tend_enc)
 
     # minimum Quality Flag value
-    QF_threshold = 4
+    QF_threshold = 3
+
+    # distance from last SB in-situ location
+    T1, T2, T3, T4, T5, T6 = get_event_times(data[data['Case Number']==1])
+    last_event_orb_coords = astrospice.generate_coords('SOLAR PROBE PLUS', re.split('[/]', T3)[0])
+    last_event_orb_coords = last_event_orb_coords.transform_to(new_frame)
 
     for i in tqdm(range(Nevents)):
-        if(data['Quality Flag'][i] < QF_threshold): continue
+    # for i in tqdm(range(4)):
+        QF = data['Quality Flag'][i]
+        if(QF < QF_threshold): continue
 
         # event number and encounter
         event_number = i+1
@@ -182,7 +205,12 @@ if __name__=='__main__':
         T1, T2, T3, T4, T5, T6 = get_event_times(data[data['Case Number']==event_number])
         event_orb_coords = astrospice.generate_coords('SOLAR PROBE PLUS', re.split('[/]', T3)[0])
         event_orb_coords = event_orb_coords.transform_to(new_frame)
-        PSP_dist_Rsun = event_orb_coords.distance.to(u.Rsun).value[0]
+        # PSP_dist_Rsun = event_orb_coords.distance.to(u.Rsun).value[0]
+        PSP_dist_Rsun = event_orb_coords.radius.to(u.Rsun).value[0]
+
+        # calculating distance from last event
+        # print(event_orb_coords, last_event_orb_coords)
+        distance_offset = spherical_distance(event_orb_coords, last_event_orb_coords)
 
         # getting the deflection in Parker Frame
         Bmag, theta, phi, alpha_p, BRTN, VRTN, time_spc = get_Bpolar_in_ParkerFrame(T1, T2, T3, T4, T5, T6)
@@ -203,19 +231,25 @@ if __name__=='__main__':
         # plot colormap of (theta, phi) which serves as data to emcee
         fig = plt.figure(figsize=(8,5))
         axs = fig.add_subplot(221)
-        axs.text(0.1, 0.9, f'Encounter: {enc}')
+        axs.text(0.1, 0.8, f'Encounter: {enc}')
         axs.text(0.1, 0.7, f'SB onset Date/Time: {T3}')
-        axs.text(0.1, 0.5, f'SB duration [s]: {SB_duration:.2f}')
-        axs.text(0.1, 0.3, f'Distance from Su [Rsun]: {PSP_dist_Rsun:.2f}')
-        axs.text(0.1, 0.1, f'Min QF: {QF_threshold}')
+        axs.text(0.1, 0.6, f'SB duration [s]: {SB_duration:.2f}')
+        axs.text(0.1, 0.5, f'Distance from Sun [Rsun]: {PSP_dist_Rsun:.2f}')
+        axs.text(0.1, 0.4, f'QF: {QF} [Min QF: {QF_threshold}]')
+        axs.text(0.1, 0.3, f'Distance offset [Rsun]: {distance_offset}')
+
         axs.axis('off')
         axs = fig.add_subplot(222)
         make_theta_phi_zangle_plot(fig, axs, theta, phi)
         axs = fig.add_subplot(223, projection='polar')
-        axs.plot(enc_orb_coords.lon.to(u.rad), enc_orb_coords.distance.to(u.au), 'grey', zorder=0)
-        axs.scatter(event_orb_coords.lon.to(u.rad), event_orb_coords.distance.to(u.au), c='red', s=15, zorder=1)
+        # axs.plot(enc_orb_coords.lon.to(u.rad), enc_orb_coords.distance.to(u.au), 'grey', zorder=0)
+        # axs.scatter(event_orb_coords.lon.to(u.rad), event_orb_coords.distance.to(u.au), c='red', s=15, zorder=1)
+        axs.plot(enc_orb_coords.lon.to(u.rad), enc_orb_coords.radius.to(u.au), 'grey', zorder=0)
+        axs.scatter(event_orb_coords.lon.to(u.rad), event_orb_coords.radius.to(u.au), c='red', s=15, zorder=1)
         axs = fig.add_subplot(224)
         make_BRTN_plots(axs, time_spc, BRTN, T1, T2, T3, T4, T5, T6)
         plt.tight_layout()
         plt.savefig(f'plots/{enc}_{event_number}.pdf')
         plt.close()
+
+        last_event_orb_coords = event_orb_coords

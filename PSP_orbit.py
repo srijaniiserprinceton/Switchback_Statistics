@@ -3,10 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.time import Time, TimeDelta
 from sunpy.coordinates import HeliocentricInertial
+from sunpy.coordinates import HeliographicCarrington
 import astrospice
 plt.ion()
 
-def get_PSP_orbit_coords(tstart, tend, tstep='half_day'):
+def get_PSP_orbit_coords(tstart, tend, tstep='half_day', frame='HeliographicCarrington'):
     kernels = astrospice.registry.get_kernels('psp', 'predict')
     psp_kernel = kernels[0]
 
@@ -16,7 +17,10 @@ def get_PSP_orbit_coords(tstart, tend, tstep='half_day'):
     # times = Time(np.arange(Time(tstart), Time(tend), dt))
     times = Time(np.linspace(Time(tstart), Time(tend), 100))
     coords = astrospice.generate_coords('SOLAR PROBE PLUS', times)
-    new_frame = HeliocentricInertial()
+    if(frame=='HeliographicCarrington'):
+        new_frame = HeliographicCarrington(observer='self')
+    if(frame=='HeliocentricIntertial'):
+        new_frame = HeliocentricInertial()
     coords = coords.transform_to(new_frame)
 
     return times, coords

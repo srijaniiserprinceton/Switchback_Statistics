@@ -2,5 +2,6 @@ data_products/
 psp_data/
 *.pdf
 *.h5
+*.pkl
 .DS_Store
 __pycache__

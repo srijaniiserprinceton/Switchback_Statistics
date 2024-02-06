@@ -4,6 +4,7 @@ import pandas
 from tqdm import tqdm
 import pyspedas
 import pytplot
+import datetime
 import astropy.units as u
 from astropy.time import Time, TimeDelta
 # from sunpy.coordinates import HeliocentricInertial
@@ -15,8 +16,11 @@ from scipy import interpolate
 import matplotlib.pyplot as plt
 plt.ion()
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from photutils.centroids import (centroid_1dg, centroid_2dg,
+                                 centroid_com, centroid_quadratic)
 
 import PSP_orbit
+import misc_functions as misc_FN
 
 Rsun_km = u.Rsun.to('km')
 
@@ -124,10 +128,16 @@ def get_Bpolar_in_ParkerFrame(T1, T2, T3, T4, T5, T6):
 
     return Bmag.value, lat.value, lon.value, alpha_p, np.array([BR, BT, BN]), np.asarray([VR, VT, VN]), time_spc
 
+def grid2coor(xy):
+    x, y = xy
+    X = x * 360/50 - 180
+    Y = y * 180/25 - 90
+    return (X, Y)
+
 # def make_theta_phi_zangle_plot(fig, ax, xedges, yedges, hist2D):
 def make_theta_phi_zangle_plot(fig, ax, ztheta, zphi):
     divider = make_axes_locatable(ax)
-    __, __, __, im = ax.hist2d(zphi * 180/np.pi, ztheta * 180/np.pi, bins=[50,25], range=[[-180, 180],[-90, 90]], cmap='gnuplot', rasterized=True)
+    h, __, __, im = ax.hist2d(zphi * 180/np.pi, ztheta * 180/np.pi, bins=[50,25], range=[[-180, 180],[-90, 90]], cmap='gnuplot', rasterized=True)
     ax.axhline(0, color='gray')
     ax.axvline(0, color='gray')
     ax.set_xlabel(r'$\phi$ in degrees')
@@ -135,6 +145,21 @@ def make_theta_phi_zangle_plot(fig, ax, ztheta, zphi):
     cax = divider.append_axes('right', size='2%', pad=0.05)
     fig.colorbar(im, cax=cax, orientation='vertical')
     ax.set_aspect('equal')
+
+    # calculating and plotting the centroids
+    h = h.T
+    xycen1 = grid2coor(centroid_com(h))
+    xycen2 = grid2coor(centroid_quadratic(h))
+    xycen3 = grid2coor(centroid_1dg(h))
+    xycen4 = grid2coor(centroid_2dg(h))
+    xycens = [xycen1, xycen2, xycen3, xycen4]
+    colors = ('white', 'black', 'red', 'blue')
+    for xycen, color in zip(xycens, colors):
+        ax.plot(*xycen, color=color, marker='+', ms=15, mew=2.0)
+
+    # returns the different estimates of centroids
+    return xycen
+
 
 def make_BRTN_plots(ax, time_event, BRTN, T1, T2, T3, T4, T5, T6):
     B = np.linalg.norm(BRTN, axis=0)
@@ -158,64 +183,73 @@ def make_BRTN_plots(ax, time_event, BRTN, T1, T2, T3, T4, T5, T6):
     ax.axvspan(T4, T5, alpha=0.2, color='orange')
     ax.axvspan(T5, T6, alpha=0.2, color='green')
 
-def spherical_distance(coor1, coor2):
-    # unpacking the coordinates
-    r1, theta1, phi1 = coor1.radius.to(u.km), coor1.lat.to(u.rad), coor1.lon.to(u.rad)
-    r2, theta2, phi2 = coor2.radius.to(u.km), coor2.lat.to(u.rad), coor2.lon.to(u.rad)
-
-    # calculating spherical distance
-    dist_sq = r1**2 + r2**2 - 2*r1*r2*(np.sin(theta1)*np.sin(theta2)*np.cos(phi1-phi2)\
-                            + np.cos(theta1)*np.cos(theta2))
-    dist = np.sqrt(dist_sq)
-
-    # returns distances in Rsun
-    return dist.to(u.Rsun)
-
 if __name__=='__main__':
     # selecting encounter to analyze. E1,2,4-8 are available
-    enc = 'E02'
+    enc = 'E04'
     #-------selecting the time window-----#
     data = pandas.read_csv(f"./data_products/Huang2023Catalog/{enc}_PSP_switchback_event_list.csv") 
-    # events = data.groupby(["event number","encounter"])  # 1,074 events
-
-    Nevents = data.shape[0]
-
-    # getting the PSP orbit coordinates at resolution of half a day
-    tstart_enc, tend_enc = data['LQP Start Time'][0], data['TQP End Time'][Nevents-1]
-    tstart_enc, tend_enc = re.split('[/]', tstart_enc)[0], re.split('[/]', tend_enc)[0]
-    enc_orb_times, enc_orb_coords = PSP_orbit.get_PSP_orbit_coords(tstart_enc, tend_enc)
 
     # minimum Quality Flag value
     QF_threshold = 3
+    data = data[data['Quality Flag']>=QF_threshold]
+    Nevents = data.shape[0]
+
+    # getting the PSP orbit coordinates at resolution of half a day
+    start_case_no, end_case_no = data['Case Number'].keys()[0], data['Case Number'].keys()[-1]
+    tstart_enc, tend_enc = data['LQP Start Time'][start_case_no], data['TQP End Time'][end_case_no]
+    tstart_enc = np.asarray(re.split('[-,/,:]', tstart_enc)).astype('int')
+    tend_enc = np.asarray(re.split('[-,/,:]', tend_enc)).astype('int')
+    # enc_orb_times, enc_orb_coords = PSP_orbit.get_PSP_orbit_coords(tstart_enc, tend_enc)
+    dt_start_enc, dt_end_enc = datetime.datetime(*tstart_enc), datetime.datetime(*tend_enc)
+    dt_mission = PSP_orbit.get_PSP_orbit_spice(dt_start_enc, dt_end_enc)
+
+    # datetime array of SB events
+    SB_times = data['spike Start Time']
+    dt_SB_events = []
+    for idx_key in SB_times.keys():
+        dt_SB_events.append(datetime.datetime(*np.asarray(re.split('[-,/,:]', SB_times[idx_key])).astype('int')))
+    dt_SB_events = np.asarray(dt_SB_events)
+    # obtaining the interpolated PSP coorinates
+    PSP_coor_SB_events = PSP_orbit.get_PSP_orbit_highres(dt_mission, dt_SB_events)
 
     # distance from last SB in-situ location
-    T1, T2, T3, T4, T5, T6 = get_event_times(data[data['Case Number']==1])
-    last_event_orb_coords = astrospice.generate_coords('SOLAR PROBE PLUS', re.split('[/]', T3)[0])
-    last_event_orb_coords = last_event_orb_coords.transform_to(new_frame)
+    # T1, T2, T3, T4, T5, T6 = get_event_times(data[data['Case Number']==1])
+    # last_event_orb_coords = astrospice.generate_coords('SOLAR PROBE PLUS', re.split('[/]', T3)[0])
+    # last_event_orb_coords = last_event_orb_coords.transform_to(new_frame)
+    last_event_orb_coords = PSP_coor_SB_events[0]
+    last_event_time = dt_SB_events[0]
 
-    for i in tqdm(range(Nevents)):
+    # metadata dictionary
+    metadict = {}
+
+    for i, event_key in tqdm(enumerate(data['Case Number'].keys())):
     # for i in tqdm(range(4)):
-        QF = data['Quality Flag'][i]
-        if(QF < QF_threshold): continue
 
         # event number and encounter
-        event_number = i+1
+        case_number = event_key + 1
+
+        # Quality factor of event
+        QF = data['Quality Flag'][event_key]
 
         # obtaining the six timestamps for the specific event
-        T1, T2, T3, T4, T5, T6 = get_event_times(data[data['Case Number']==event_number])
-        event_orb_coords = astrospice.generate_coords('SOLAR PROBE PLUS', re.split('[/]', T3)[0])
-        event_orb_coords = event_orb_coords.transform_to(new_frame)
+        T1, T2, T3, T4, T5, T6 = get_event_times(data[data['Case Number']==case_number])
+        # event_orb_coords = astrospice.generate_coords('SOLAR PROBE PLUS', re.split('[/]', T3)[0])
+        # event_orb_coords = event_orb_coords.transform_to(new_frame)
+        event_orb_coords = PSP_coor_SB_events[i]
         # PSP_dist_Rsun = event_orb_coords.distance.to(u.Rsun).value[0]
-        PSP_dist_Rsun = event_orb_coords.radius.to(u.Rsun).value[0]
+        # PSP_dist_Rsun = event_orb_coords.radius.to(u.Rsun).value[0]
+        PSP_dist_Rsun = event_orb_coords.radius.to(u.Rsun).value
 
         # calculating distance from last event
         # print(event_orb_coords, last_event_orb_coords)
-        distance_offset = spherical_distance(event_orb_coords, last_event_orb_coords)
+        distance_offset = misc_FN.spherical_distance(event_orb_coords, last_event_orb_coords)
+        cosdist_onsphr_offset = misc_FN.cosdist_on_sphere(event_orb_coords, last_event_orb_coords)
+        print(cosdist_onsphr_offset)
+        time_offset = (dt_SB_events[i] - last_event_time).total_seconds()
 
         # getting the deflection in Parker Frame
         Bmag, theta, phi, alpha_p, BRTN, VRTN, time_spc = get_Bpolar_in_ParkerFrame(T1, T2, T3, T4, T5, T6)
 
-        # sys.exit()
         # clipping the theta and phi arrays to the SB spike interval only
         T3_datetime64, T4_datetime64 = to_datetime64(T3), to_datetime64(T4)
         SB_duration = (T4_datetime64 - T3_datetime64)/np.timedelta64(1, 's')
@@ -236,20 +270,39 @@ if __name__=='__main__':
         axs.text(0.1, 0.6, f'SB duration [s]: {SB_duration:.2f}')
         axs.text(0.1, 0.5, f'Distance from Sun [Rsun]: {PSP_dist_Rsun:.2f}')
         axs.text(0.1, 0.4, f'QF: {QF} [Min QF: {QF_threshold}]')
-        axs.text(0.1, 0.3, f'Distance offset [Rsun]: {distance_offset}')
+        axs.text(0.1, 0.3, f'Distance offset [Rsun]: {distance_offset:.2f}')
+        axs.text(0.1, 0.2, f'Cos angle offset: {cosdist_onsphr_offset:.2f}')
+        axs.text(0.1, 0.1, f'Time offset [sec]: {time_offset:.2f}')
 
         axs.axis('off')
         axs = fig.add_subplot(222)
-        make_theta_phi_zangle_plot(fig, axs, theta, phi)
-        axs = fig.add_subplot(223, projection='polar')
+        xy_cen = make_theta_phi_zangle_plot(fig, axs, theta, phi)
+        axs = fig.add_subplot(223)
         # axs.plot(enc_orb_coords.lon.to(u.rad), enc_orb_coords.distance.to(u.au), 'grey', zorder=0)
         # axs.scatter(event_orb_coords.lon.to(u.rad), event_orb_coords.distance.to(u.au), c='red', s=15, zorder=1)
-        axs.plot(enc_orb_coords.lon.to(u.rad), enc_orb_coords.radius.to(u.au), 'grey', zorder=0)
-        axs.scatter(event_orb_coords.lon.to(u.rad), event_orb_coords.radius.to(u.au), c='red', s=15, zorder=1)
+        # axs.plot(enc_orb_coords.lon.to(u.rad), enc_orb_coords.radius.to(u.au), 'grey', zorder=0)
+        axs.scatter(PSP_coor_SB_events.lon, PSP_coor_SB_events.lat, color="black", s=1)
+        axs.scatter(PSP_coor_SB_events.lon[i], PSP_coor_SB_events.lat[i], c='red', s=15, zorder=1)
         axs = fig.add_subplot(224)
         make_BRTN_plots(axs, time_spc, BRTN, T1, T2, T3, T4, T5, T6)
         plt.tight_layout()
-        plt.savefig(f'plots/{enc}_{event_number}.pdf')
+        plt.savefig(f'plots/{enc}_{case_number}.pdf')
         plt.close()
 
         last_event_orb_coords = event_orb_coords
+        last_event_time = dt_SB_events[i]
+        
+        # adding to the dictionary
+        metadict[f'{enc}_{case_number}'] = {}
+        metadict[f'{enc}_{case_number}']['onset_time'] = T3
+        metadict[f'{enc}_{case_number}']['duration'] = SB_duration
+        metadict[f'{enc}_{case_number}']['dist_from_Sun'] = PSP_dist_Rsun
+        metadict[f'{enc}_{case_number}']['QF'] = QF
+        metadict[f'{enc}_{case_number}']['distance_offset'] = distance_offset
+        metadict[f'{enc}_{case_number}']['cosdist_onsphr_offset'] = cosdist_onsphr_offset
+        metadict[f'{enc}_{case_number}']['time_offset'] = time_offset
+        metadict[f'{enc}_{case_number}']['xy_cen'] = xy_cen
+
+    
+    # saving the dictionary in a pickle file
+    misc_FN.write_pickle(metadict, f'{enc}_metadict')

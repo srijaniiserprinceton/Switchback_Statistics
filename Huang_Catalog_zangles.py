@@ -87,7 +87,7 @@ def get_Bpolar_in_ParkerFrame(T1, T2, T3, T4, T5, T6):
     spc_vars = pyspedas.psp.spc(trange=[tstart, tend], datatype='l3i', level='l3', time_clip=True, no_update=False)
     print('Loading FIELDS variables.....')
     fields_vars = pyspedas.psp.fields(trange=[tstart, tend], varnames=['psp_fld_l2_mag_RTN_4_Sa_per_Cyc'],
-                                      datatype='mag_RTN_4_Sa_per_Cyc', level='l2', time_clip=True, no_update=False)
+                                      datatype='mag_RTN_4_Sa_per_Cyc', level='l2', time_clip=True, no_update=True)
 
     # reading the pytplot variables
     time_fld = pytplot.data_quants['psp_fld_l2_mag_RTN_4_Sa_per_Cyc'].time.data
@@ -158,7 +158,7 @@ def make_theta_phi_zangle_plot(fig, ax, ztheta, zphi):
         ax.plot(*xycen, color=color, marker='+', ms=15, mew=2.0)
 
     # returns the different estimates of centroids
-    return xycen
+    return xycens
 
 
 def make_BRTN_plots(ax, time_event, BRTN, T1, T2, T3, T4, T5, T6):
@@ -185,7 +185,7 @@ def make_BRTN_plots(ax, time_event, BRTN, T1, T2, T3, T4, T5, T6):
 
 if __name__=='__main__':
     # selecting encounter to analyze. E1,2,4-8 are available
-    enc = 'E04'
+    enc = 'E01'
     #-------selecting the time window-----#
     data = pandas.read_csv(f"./data_products/Huang2023Catalog/{enc}_PSP_switchback_event_list.csv") 
 
@@ -243,8 +243,7 @@ if __name__=='__main__':
         # calculating distance from last event
         # print(event_orb_coords, last_event_orb_coords)
         distance_offset = misc_FN.spherical_distance(event_orb_coords, last_event_orb_coords)
-        cosdist_onsphr_offset = misc_FN.cosdist_on_sphere(event_orb_coords, last_event_orb_coords)
-        print(cosdist_onsphr_offset)
+        angdist_onsphr_offset = misc_FN.angdist_on_sphere(event_orb_coords, last_event_orb_coords)
         time_offset = (dt_SB_events[i] - last_event_time).total_seconds()
 
         # getting the deflection in Parker Frame
@@ -271,7 +270,7 @@ if __name__=='__main__':
         axs.text(0.1, 0.5, f'Distance from Sun [Rsun]: {PSP_dist_Rsun:.2f}')
         axs.text(0.1, 0.4, f'QF: {QF} [Min QF: {QF_threshold}]')
         axs.text(0.1, 0.3, f'Distance offset [Rsun]: {distance_offset:.2f}')
-        axs.text(0.1, 0.2, f'Cos angle offset: {cosdist_onsphr_offset:.2f}')
+        axs.text(0.1, 0.2, f'Ang angle offset [ang min]: {angdist_onsphr_offset:.2f}')
         axs.text(0.1, 0.1, f'Time offset [sec]: {time_offset:.2f}')
 
         axs.axis('off')
@@ -299,7 +298,7 @@ if __name__=='__main__':
         metadict[f'{enc}_{case_number}']['dist_from_Sun'] = PSP_dist_Rsun
         metadict[f'{enc}_{case_number}']['QF'] = QF
         metadict[f'{enc}_{case_number}']['distance_offset'] = distance_offset
-        metadict[f'{enc}_{case_number}']['cosdist_onsphr_offset'] = cosdist_onsphr_offset
+        metadict[f'{enc}_{case_number}']['angdist_onsphr_offset'] = angdist_onsphr_offset
         metadict[f'{enc}_{case_number}']['time_offset'] = time_offset
         metadict[f'{enc}_{case_number}']['xy_cen'] = xy_cen
 

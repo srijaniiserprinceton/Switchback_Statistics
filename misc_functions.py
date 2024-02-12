@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import datetime
 from scipy.interpolate import interp1d
@@ -5,6 +6,7 @@ from astropy.coordinates import SkyCoord
 import sunpy.coordinates
 import astropy.units as u
 import pickle
+from scipy import interpolate
 
 def gen_dt_arr(dt_init, dt_final, cadence_days=1) :
     """
@@ -60,14 +62,17 @@ def spherical_distance(coor1, coor2):
     # returns distances in Mm
     return dist.to(u.Mm)
 
-def cosdist_on_sphere(coor1, coor2):
+def angdist_on_sphere(coor1, coor2):
     '''
     Calculating the distance between two points assuming they are
     on a unit sphere.
     '''
     theta1, phi1 = coor1.lat.to(u.rad), coor1.lon.to(u.rad)
     theta2, phi2 = coor2.lat.to(u.rad), coor2.lon.to(u.rad)
-    return np.sin(theta1) * np.sin(theta2) + np.cos(theta1) * np.cos(theta2) * np.cos(phi1 - phi2)
+    cos_theta = np.sin(theta1) * np.sin(theta2) + np.cos(theta1) * np.cos(theta2) * np.cos(phi1 - phi2)
+
+    # using small angle approximation in angular minutes
+    return np.sqrt(2 * (1 - cos_theta)) * 180 / np.pi * 60
 
 
 def write_pickle(x, fname):
@@ -79,3 +84,31 @@ def read_pickle(fname):
     with open(f'{fname}.pkl', 'rb') as handle:
         x = pickle.load(handle)
     return x
+
+def timestr_to_dt64(time_str):
+    date, time = re.split('[/]', time_str)
+    return np.datetime64(f'{date}T{time}')
+
+def dt64_to_timestr(time_str):
+    date, time = re.split('[T]', str(time_str))
+    return f'{date}/{time}'
+
+def get_radial_distance_from_time(hci_coords_km):
+    # getting the distance in km
+    dist_km = np.linalg.norm(hci_coords_km, axis=1) * u.km
+    dist_Rsun = dist_km.to(u.Rsun)
+    
+    return dist_Rsun
+
+def resampled_B(BR, BT, BN, time_fld, time_spc):
+    dt_fld_mus = time_fld - np.datetime64('2001-01-01T00:00:00')
+    dt_fld = dt_fld_mus / np.timedelta64(1, 'us')
+    dt_spc_mus = time_spc - np.datetime64('2001-01-01T00:00:00')
+    dt_spc = dt_spc_mus / np.timedelta64(1, 'us')
+    BR_ = interpolate.interp1d(dt_fld, BR, bounds_error=False)
+    BT_ = interpolate.interp1d(dt_fld, BT, bounds_error=False)
+    BN_ = interpolate.interp1d(dt_fld, BN, bounds_error=False)
+    BR = BR_(dt_spc)
+    BT = BT_(dt_spc)
+    BN = BN_(dt_spc)
+    return BR, BT, BN

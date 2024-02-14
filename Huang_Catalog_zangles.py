@@ -185,7 +185,7 @@ def make_BRTN_plots(ax, time_event, BRTN, T1, T2, T3, T4, T5, T6):
 
 if __name__=='__main__':
     # selecting encounter to analyze. E1,2,4-8 are available
-    enc = 'E01'
+    enc = 'E02'
     #-------selecting the time window-----#
     data = pandas.read_csv(f"./data_products/Huang2023Catalog/{enc}_PSP_switchback_event_list.csv") 
 

@@ -112,3 +112,27 @@ def resampled_B(BR, BT, BN, time_fld, time_spc):
     BT = BT_(dt_spc)
     BN = BN_(dt_spc)
     return BR, BT, BN
+
+def grid2coor(xy):
+    x, y = xy
+    X = x * 360/50 - 180
+    Y = y * 180/25 - 90
+    return (X, Y)
+
+def convert2datetime64(T1, T2, T3, T4, T5, T6):
+    try:
+        t1 = timestr_to_dt64(T1)
+        t2 = timestr_to_dt64(T2)
+        t3 = timestr_to_dt64(T3)
+        t4 = timestr_to_dt64(T4)
+        t5 = timestr_to_dt64(T5)
+        t6 = timestr_to_dt64(T6)
+    except:
+        t1 = np.datetime64(T1)
+        t2 = np.datetime64(T2)
+        t3 = np.datetime64(T3)
+        t4 = np.datetime64(T4)
+        t5 = np.datetime64(T5)
+        t6 = np.datetime64(T6)
+
+    return t1, t2, t3, t4, t5, t6

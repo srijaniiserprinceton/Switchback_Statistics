@@ -5,3 +5,7 @@ psp_data/
 *.pkl
 .DS_Store
 __pycache__
+plots_*
+*_plots
+*.png
+*.pdf

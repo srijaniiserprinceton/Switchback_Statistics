@@ -1,0 +1,9 @@
+python Vamsee_Catalog_zangles.py 2
+python Vamsee_Catalog_zangles.py 3
+python Vamsee_Catalog_zangles.py 4
+python Vamsee_Catalog_zangles.py 5
+python Vamsee_Catalog_zangles.py 6
+python Vamsee_Catalog_zangles.py 7
+python Vamsee_Catalog_zangles.py 8
+python Vamsee_Catalog_zangles.py 9
+python Vamsee_Catalog_zangles.py 10

@@ -197,10 +197,10 @@ if __name__=='__main__':
     enc_start_times, enc_end_times, enc_num = get_enc_times.get_PSP_enc()
 
     #-------selecting the time window-----#
-    data = np.load('data_products/Vamsee_Catalog/dictionary_Switch_back_analysis_srijan_das.npy', allow_pickle=True)
+    data = np.load('data_products/Larosa_Catalog/dates_lead_trail.npz', allow_pickle=True)
 
-    enc_mask = (data.item()['New_Time_SB_patch_starting'] > utc.localize(enc_start_times[enc-1])) *\
-               (data.item()['New_Time_SB_patch_starting'] < utc.localize(enc_end_times[enc-1]))
+    enc_mask = (data['date_lead_vec'][0,:] > utc.localize(enc_start_times[enc-1])) *\
+               (data['date_trail_vec'][1,:] < utc.localize(enc_end_times[enc-1]))
 
     Nevents = np.sum(enc_mask)
 
@@ -209,14 +209,25 @@ if __name__=='__main__':
     dt_mission = PSP_orbit.get_PSP_orbit_spice(dt_start_enc, dt_end_enc)
 
     # datetime array of SB events
-    dt_SB_events = data.item()['New_Time_SB_patch_starting'][enc_mask]
-    dt_SB_window = data.item()['life_time_SB_patch'][enc_mask] # in seconds
+    dt_SB_lead = data['date_lead_vec'][0,:][enc_mask]
+    dt_SB_start = data['date_lead_vec'][1,:][enc_mask]
+    dt_SB_end = data['date_trail_vec'][0,:][enc_mask]
+    dt_SB_trail = data['date_trail_vec'][1,:][enc_mask]
+
+    # arranging by time
+    sort_idx = np.argsort(dt_SB_start)
+
+    dt_SB_lead = dt_SB_lead[sort_idx]
+    dt_SB_start = dt_SB_start[sort_idx]
+    dt_SB_end = dt_SB_end[sort_idx]
+    dt_SB_trail = dt_SB_trail[sort_idx]
+
     # obtaining the interpolated PSP coorinates
-    PSP_coor_SB_events = PSP_orbit.get_PSP_orbit_highres(dt_mission, dt_SB_events)
+    PSP_coor_SB_events = PSP_orbit.get_PSP_orbit_highres(dt_mission, dt_SB_start)
 
     # distance from last SB in-situ location
     last_event_orb_coords = PSP_coor_SB_events[0]
-    last_event_time = dt_SB_events[0]
+    last_event_time = dt_SB_start[0]
 
     # metadata dictionary
     metadict = {}
@@ -224,12 +235,12 @@ if __name__=='__main__':
     for i in tqdm(range(Nevents)):
         # obtaining the six timestamps for the specific event
         # adding arbitrary 2 minutes to make up T1, T2, T5, T6 (only T3 and T4 are real)
-        T1, T2, T3, T4, T5, T6 = dt_SB_events[i] + datetime.timedelta(seconds=-240),\
-                                 dt_SB_events[i] + datetime.timedelta(seconds=-120),\
-                                 dt_SB_events[i],\
-                                 dt_SB_events[i] + datetime.timedelta(seconds=int(dt_SB_window[i])),\
-                                 dt_SB_events[i] + datetime.timedelta(seconds=int(dt_SB_window[i])+120),\
-                                 dt_SB_events[i] + datetime.timedelta(seconds=int(dt_SB_window[i])+240)
+        T1, T2, T3, T4, T5, T6 = dt_SB_lead[i] + datetime.timedelta(seconds=-60),\
+                                 dt_SB_lead[i],\
+                                 dt_SB_start[i],\
+                                 dt_SB_end[i],\
+                                 dt_SB_trail[i],\
+                                 dt_SB_trail[i] + datetime.timedelta(seconds=60)
         # event_orb_coords = astrospice.generate_coords('SOLAR PROBE PLUS', re.split('[/]', T3)[0])
         # event_orb_coords = event_orb_coords.transform_to(new_frame)
         event_orb_coords = PSP_coor_SB_events[i]
@@ -241,7 +252,7 @@ if __name__=='__main__':
         # print(event_orb_coords, last_event_orb_coords)
         distance_offset = misc_FN.spherical_distance(event_orb_coords, last_event_orb_coords)
         angdist_onsphr_offset = misc_FN.angdist_on_sphere(event_orb_coords, last_event_orb_coords)
-        time_offset = (dt_SB_events[i] - last_event_time).total_seconds()
+        time_offset = (dt_SB_start[i] - last_event_time).total_seconds()
 
         # getting the deflection in Parker Frame
         Bmag, theta, phi, alpha_p, BRTN, VRTN, time_spc = get_Bpolar_in_ParkerFrame(T1, T2, T3, T4, T5, T6)
@@ -283,7 +294,7 @@ if __name__=='__main__':
             axs = fig.add_subplot(224)
             make_BRTN_plots(axs, time_spc, BRTN, T1, T2, T3, T4, T5, T6)
             plt.tight_layout()
-            plt.savefig(f'plots_Vamsee/{enc}_{i}.pdf')
+            plt.savefig(f'plots_Larosa/{enc}_{i}.pdf')
             plt.close()
 
             last_event_orb_coords = event_orb_coords
@@ -303,4 +314,4 @@ if __name__=='__main__':
 
     
     # saving the dictionary in a pickle file
-    misc_FN.write_pickle(metadict, f'{enc}_metadict_Vamsee')
+    misc_FN.write_pickle(metadict, f'{enc}_metadict_Larosa')

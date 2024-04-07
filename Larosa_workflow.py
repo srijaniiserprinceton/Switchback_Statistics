@@ -144,7 +144,7 @@ def get_statistics():
         # getting the deflection in Parker Frame
         T1_formatted = f'{T1.year}-{T1.month}-{T1.day}/{T1.hour}:{T1.minute}:{T1.second}'
         T6_formatted = f'{T6.year}-{T6.month}-{T6.day}/{T6.hour}:{T6.minute}:{T6.second}'
-        theta, phi, alpha_p, BRTN, VRTN, WP, time_spc = shared_FN.get_Bpolar_in_ParkerFrame(T1_formatted, T6_formatted)
+        theta, phi, alpha_p, BRTN, VRTN, WP, N_p, time_spc = shared_FN.get_Bpolar_in_ParkerFrame(T1_formatted, T6_formatted)
 
         optimal_windur = find_background_window(np.linalg.norm(BRTN, axis=0), time_spc, T2, T3, T4, T5, i)
         optimal_windur_sec = optimal_windur / np.timedelta64(1, 's')
@@ -197,6 +197,9 @@ def get_statistics():
 
         last_event_orb_coords = event_orb_coords
         last_event_time = dt_SB_end[i]
+
+        #------ Agapitov+2023 statistics ----------#
+        theta_agp, alpha_agp, sig_c, sig_r, time_nonan = shared_FN.get_Agapitov_params(N_p, VRTN, BRTN, time_spc, T1, T2)
         
         # adding to the dictionary
         metadict[f'{enc}_{i}'] = {}
@@ -210,6 +213,11 @@ def get_statistics():
         metadict[f'{enc}_{i}']['B_ratio'] = B_ratio
         metadict[f'{enc}_{i}']['V_ratio'] = V_ratio
         metadict[f'{enc}_{i}']['beta_ratio'] = beta_ratio
+        metadict[f'{enc}_{i}']['theta_arr'] = theta_agp
+        metadict[f'{enc}_{i}']['alpha_arr'] = alpha_agp
+        metadict[f'{enc}_{i}']['sig_c_arr'] = sig_c
+        metadict[f'{enc}_{i}']['sig_r_arr'] = sig_r
+        metadict[f'{enc}_{i}']['time_nonan'] = time_nonan
 
         # except:
         #     continue

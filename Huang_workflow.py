@@ -79,7 +79,7 @@ def get_statistics(enc):
         time_offset = (np.datetime64(dt_SB_events[i]) - last_event_time) / np.timedelta64(1, 's')
 
         # getting the deflection in Parker Frame
-        theta, phi, alpha_p, BRTN, VRTN, WP, time_spc = shared_FN.get_Bpolar_in_ParkerFrame(T1, T6)
+        theta, phi, alpha_p, BRTN, VRTN, WP, N_p, time_spc = shared_FN.get_Bpolar_in_ParkerFrame(T1, T6)
 
         # getting Larosa statistics
         Bmag = np.linalg.norm(BRTN, axis=0)
@@ -128,6 +128,29 @@ def get_statistics(enc):
 
         last_event_orb_coords = event_orb_coords
         last_event_time = T4_datetime64
+
+        #------ Agapitov+2023 statistics ----------#
+        theta_agp, alpha_agp, sig_c, sig_r, time_nonan = shared_FN.get_Agapitov_params(N_p, VRTN, BRTN, time_spc, T1, T2)
+
+        fig, ax = plt.subplots(4, 1, figsize=(6,5), sharex=True)
+        ax[0].plot(time_nonan, theta_agp * 180 / np.pi, '.k')
+        ax[1].plot(time_nonan, alpha_agp, '.k')
+        ax[2].plot(time_nonan, sig_c, '.k')
+        ax[3].plot(time_nonan, sig_r, '.k')
+        T2_datetime64 = misc_FN.timestr_to_dt64(T2)
+        T2_idx = np.argmin(np.abs(time_nonan - T2_datetime64))
+        for axis_idx in range(4):
+            ax[axis_idx].axvline(T2_datetime64, color='red', ls='solid')
+            ax[axis_idx].axvline(T3_datetime64, color='red', ls='dashed')
+            ax[axis_idx].axvline(T4_datetime64, color='red', ls='dashed')
+        ax[1].axhline(1, color='black', alpha=0.5)
+        ax[0].set_title(theta_agp[T2_idx] * 180/np.pi)
+        ax[3].set_xlabel('Time')
+        ax[0].set_ylabel(r'$\theta$ [degrees]')
+        ax[1].set_ylabel(r'$\alpha$')
+        ax[2].set_ylabel(r'$\sigma_c$')
+        ax[3].set_ylabel(r'$\sigma_r$')
+        plt.savefig(f'Huang_plots/Agapitov_plots/{enc}_{case_number}.pdf')
         
         # adding to the dictionary
         metadict[f'{enc}_{case_number}'] = {}
@@ -142,8 +165,11 @@ def get_statistics(enc):
         metadict[f'{enc}_{case_number}']['B_ratio'] = B_ratio
         metadict[f'{enc}_{case_number}']['V_ratio'] = V_ratio
         metadict[f'{enc}_{case_number}']['beta_ratio'] = beta_ratio
-
-        print(case_number)
+        metadict[f'{enc}_{case_number}']['theta_arr'] = theta_agp
+        metadict[f'{enc}_{case_number}']['alpha_arr'] = alpha_agp
+        metadict[f'{enc}_{case_number}']['sig_c_arr'] = sig_c
+        metadict[f'{enc}_{case_number}']['sig_r_arr'] = sig_r
+        metadict[f'{enc}_{case_number}']['time_nonan'] = time_nonan
 
     # saving the dictionary in a pickle file
     misc_FN.write_pickle(metadict, f'{enc}_metadict_Huang')

@@ -136,3 +136,7 @@ def convert2datetime64(T1, T2, T3, T4, T5, T6):
         t6 = np.datetime64(T6)
 
     return t1, t2, t3, t4, t5, t6
+
+def unit_vector(vector):
+    """ Returns the unit vector of the vector.  """
+    return vector / np.linalg.norm(vector, axis=0)[np.newaxis, :]

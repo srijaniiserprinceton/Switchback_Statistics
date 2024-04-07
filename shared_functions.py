@@ -2,6 +2,7 @@ import numpy as np
 import pyspedas
 import pytplot
 import astropy.units as u
+import astropy.constants as const
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
 plt.ion()
@@ -19,7 +20,7 @@ def get_Bpolar_in_ParkerFrame(T1, T6):
 
     #----------- read the V and B field data from pyspedas in the RTN frame ----------------#
     print('Loading SPC variables.....')
-    spc_vars = pyspedas.psp.spc(trange=[tstart, tend], varnames=['vp_fit_RTN', 'sc_pos_HCI', 'wp_fit'],
+    spc_vars = pyspedas.psp.spc(trange=[tstart, tend], varnames=['np_fit', 'vp_fit_RTN', 'sc_pos_HCI', 'wp_fit'],
                                 datatype='l3i', level='l3', time_clip=True, no_update=False)
     print('Loading FIELDS variables.....')
     fields_vars = pyspedas.psp.fields(trange=[tstart, tend], varnames=['psp_fld_l2_mag_RTN_4_Sa_per_Cyc'],
@@ -32,6 +33,7 @@ def get_Bpolar_in_ParkerFrame(T1, T6):
     time_spc = pytplot.data_quants['psp_spc_vp_fit_RTN'].time.data
     VR, VT, VN = pytplot.data_quants['psp_spc_vp_fit_RTN'].data.T
     WP =  pytplot.data_quants['psp_spc_wp_fit'].data
+    N_p = pytplot.data_quants['psp_spc_np_fit'].data
 
     # finding the radial distance
     hci_km_spc = pytplot.data_quants['psp_spc_sc_pos_HCI']
@@ -52,7 +54,7 @@ def get_Bpolar_in_ParkerFrame(T1, T6):
 
     Bmag, lat, lon = coor.cartesian_to_spherical(Bx, By, Bz)
 
-    return lat.value, lon.value, alpha_p, np.array([BR, BT, BN]), np.asarray([VR, VT, VN]), WP, time_spc
+    return lat.value, lon.value, alpha_p, np.array([BR, BT, BN]), np.asarray([VR, VT, VN]), WP, N_p, time_spc
 
 def get_radial_distance_Rsun_from_hci(hci_coords_km):
     # getting the distance in km
@@ -152,3 +154,59 @@ def get_statistic_for_event(arr, time_arr, T1, T2, T3, T4, T5, T6):
     val_after = np.mean(arr[after_mask])
 
     return val_SB / (0.5 * (val_before + val_after))
+
+def get_DV_DB_for_event(N_p, V_RTN, B_RTN, time_arr, T1, T2):
+
+    # removing bad time entires
+    nan_mask = np.isnan(V_RTN) + np.isnan(B_RTN)
+    nan_mask = np.sum(nan_mask, axis=0)
+    nan_mask = nan_mask > 0
+    V_RTN = V_RTN[:, ~nan_mask]
+    B_RTN = B_RTN[:, ~nan_mask]
+    N_p = N_p[~nan_mask]
+    time_arr = time_arr[~nan_mask]
+
+    try:
+        T1 = np.datetime64(T1)
+        T2 = np.datetime64(T2)
+    except:
+        T1 = misc_FN.timestr_to_dt64(T1)
+        T2 = misc_FN.timestr_to_dt64(T2)
+
+    # Agapitov+2023 say that they only consider the step with respect to the before SB conditions
+    before_mask = (time_arr >= T1) * (time_arr <= T2)
+
+    T_bef_mean_idx = np.argmin(np.abs(time_arr - T2))
+
+    # below is a choice I am making in terms of what I consider background solar wind
+    # velocity
+    # V_bef_mean = np.mean(V_RTN[:, before_mask], axis=1)
+    V_bef_mean = V_RTN[:, T_bef_mean_idx] * np.random.rand(1)
+    DV = V_RTN - V_bef_mean[:, np.newaxis]
+
+    # magnetic field
+    # B_bef_mean = np.mean(B_RTN[:, before_mask], axis=1)
+    B_bef_mean = B_RTN[:, T_bef_mean_idx] * np.random.rand(1)
+    DB = B_RTN - B_bef_mean[:, np.newaxis]
+
+    return N_p, DV, DB, B_bef_mean, time_arr
+
+def get_Agapitov_params(N_p, V_RTN, B_RTN, time_arr, T1, T2):
+
+    N_p, DV, DB, B_bef_mean, time_arr = get_DV_DB_for_event(N_p, V_RTN, B_RTN, time_arr, T1, T2)
+
+    DB_u = misc_FN.unit_vector(DB)
+
+    V_par = np.sum(DV * DB_u, axis=0)
+    V_A = (DB * u.nT / np.sqrt(const.mu0 * N_p * u.cm**-3 * const.m_p)).to("km/s")
+    V_A = V_A.value
+
+    B_bef_mean_arr = np.repeat([B_bef_mean], DB_u.shape[1], axis=0).T
+    B_bef_mean_u = misc_FN.unit_vector(B_bef_mean_arr)
+    theta = np.arccos(np.clip(np.sum(DB_u * B_bef_mean_u, axis=0), -1.0, 1.0))
+    alpha = V_par / np.linalg.norm(V_A, axis=0)
+    sig_c = 2 * np.sum(V_A * DV, axis=0) / (np.linalg.norm(V_A, axis=0)**2 + np.linalg.norm(DV, axis=0)**2)
+    sig_r = (np.linalg.norm(V_A, axis=0)**2 - np.linalg.norm(DV, axis=0)**2)\
+            /(np.linalg.norm(V_A, axis=0)**2 + np.linalg.norm(DV, axis=0)**2)
+
+    return theta, alpha, sig_c, sig_r, time_arr
